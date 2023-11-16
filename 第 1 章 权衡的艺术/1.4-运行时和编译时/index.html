@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>1.4-运行时和编译时</title>
+</head>
+<body>
+
+</body>
+<script>
+    function Render(obj, root) {
+        const el = document.createElement(obj.tag)
+        if (typeof obj.children === 'string') {
+            const txt = document.createTextNode(obj.children)
+            el.appendChild(txt)
+        } else if (obj.children) {
+            obj.children.forEach(_ => Render(obj.children, el))
+        }
+        root.appendChild(el)
+    }
+</script>
+<script>
+    Render({
+        tag: 'div',
+        children: 'Hello'
+    }, document.body)
+</script>
+</html>

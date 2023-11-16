@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>1.3-虚拟DOM的性能</title>
+</head>
+<body>
+</body>
+<script>
+    class Main {
+        times
+
+        constructor(times) {
+            this.times = times
+            this.js()
+            this.vnode()
+            this.html()
+        }
+
+        js() {
+            console.time('js')
+            for (let i = 0; i < this.times; i++) {
+                const t = document.createTextNode(i)
+                const d = document.createElement('div')
+                d.appendChild(t)
+                document.body.appendChild(d)
+            }
+            console.timeEnd('js')
+        }
+
+        vnode() {
+            console.time('vnode')
+            const nodes = []
+            for (let i = 0; i < this.times; i++) {
+                nodes.push({
+                    tag: 'div',
+                    children: i
+                })
+            }
+            for (let i = 0, j = nodes.length; i < j; i++) {
+                const t = document.createTextNode(nodes[i].children)
+                const d = document.createElement(nodes[i].tag)
+                d.appendChild(t)
+                document.body.appendChild(d)
+            }
+            console.timeEnd('vnode')
+        }
+
+        html() {
+            console.time('html')
+            let html = ''
+            for (let i = 0; i < this.times; i++) {
+                html += '<div>' + i + '</div>'
+            }
+            document.body.innerHTML = html
+            console.timeEnd('html')
+        }
+    }
+
+    new Main(1000 * 100)
+</script>
+</html>
