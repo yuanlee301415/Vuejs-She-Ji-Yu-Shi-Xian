@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>3.2-初识渲染器</title>
+</head>
+<body>
+
+</body>
+<script>
+    const vnode = {
+        tag: 'div',
+        children: [{
+            tag: 'button',
+            children: 'Click Me',
+            props: {
+                onClick: function () {
+                    console.log('Hello btn')
+                }
+            }
+        }],
+        props: {
+            onClick: function () {
+                console.log('Hello div')
+            }
+        }
+    }
+    function render(vnode, container) {
+        const el = document.createElement(vnode.tag)
+        if (typeof vnode.children === 'string') {
+            const txt = document.createTextNode(vnode.children)
+            el.appendChild(txt)
+        } else if (Array.isArray(vnode.children)) {
+            vnode.children.forEach(_ => render(_, el))
+        }
+        for (let key in vnode.props) {
+            if (key.startsWith('on')) {
+                el.addEventListener(key.substr(2).toLowerCase(), vnode.props[key])
+            }
+        }
+        container.appendChild(el)
+    }
+
+    render(vnode, document.body)
+</script>
+</html>

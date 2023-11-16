@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>3.3-组件的本质-2</title>
+</head>
+<body>
+
+</body>
+<script>
+    const MyComponent = function () {
+        return {
+            tag: 'div',
+            children: [{
+                tag: 'button',
+                children: 'Click Me',
+                props: {
+                    onClick: function () {
+                        console.log('Hello btn')
+                    }
+                }
+            }],
+            props: {
+                onClick: function () {
+                    console.log('Hello div')
+                }
+            }
+        }
+    }
+    const vnode = {
+        tag: MyComponent
+    }
+
+    function mountElement(vnode, container) {
+        const el = document.createElement(vnode.tag)
+        if (typeof vnode.children === 'string') {
+            const txt = document.createTextNode(vnode.children)
+            el.appendChild(txt)
+        } else if (Array.isArray(vnode.children)) {
+            vnode.children.forEach(_ => render(_, el))
+        }
+        for (let key in vnode.props) {
+            if (key.startsWith('on')) {
+                el.addEventListener(key.substr(2).toLowerCase(), vnode.props[key])
+            }
+        }
+        container.appendChild(el)
+    }
+
+    function mountComponent(vnode, container) {
+        const subtree = vnode.tag()
+        mountElement(subtree, container)
+    }
+
+    function render(vnode, container) {
+        const { tag } = vnode
+        if (typeof tag === 'string') {
+            mountElement(vnode, container)
+        } else if (typeof tag === 'function') {
+            mountComponent(vnode, container)
+        }
+    }
+
+    render(vnode, document.body)
+</script>
+</html>
