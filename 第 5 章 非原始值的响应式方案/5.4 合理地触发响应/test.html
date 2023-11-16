@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>test</title>
+</head>
+<body>
+
+</body>
+<script>
+    const obj = {}
+    const proto = {name: 'proto'}
+    const child = new Proxy(obj, {
+        get(target, key, receiver) {
+            if (key === 'raw') {
+                console.warn('get>raw')
+            }
+        },
+        set(target, key, value, receiver) {
+            console.log('child>set:', arguments)
+            if (key === 'raw') {
+                console.warn('set>raw')
+            }
+            return Reflect.set(target, key, value, receiver)
+            // target[key] =value
+        }
+    })
+    const parent = new Proxy(proto, {
+        set(target, key, value, receiver) {
+            console.log('parent>set:', arguments)
+            if (key === 'raw') {
+                console.warn('set>raw')
+            }
+            return Reflect.set(target, key, value, receiver)
+        }
+    })
+    Object.setPrototypeOf(child, parent)
+
+    child.name = 'child'
+    console.log('child.name:', child.name)
+    // console.log('child.raw:', child.raw)
+    console.log('parent.name:', parent.name)
+    // console.log('parent.raw:', parent.raw)
+    console.log('child:', child)
+    console.log('parent:', parent)
+</script>
+</html>

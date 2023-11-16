@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>5.1 理解 Proxy 和 Reflect</title>
+</head>
+<body>
+
+</body>
+<script>
+    /**
+     * **************************************
+     * 5.1-理解 Proxy 和 Reflect
+     * **************************************
+     */
+
+    let activeEffect
+    const effectStack = []
+    const bucket = new WeakMap()
+    const obj = {
+        foo: 1,
+        /**
+         * bar 属性是一个访问器属性
+         */
+        get bar() {
+            return this.foo
+        }
+    }
+    const p = new Proxy(obj, {
+        get(target, key) {
+            track(target, key)
+            return target[key]
+        },
+        set(target, key, value) {
+            target[key] = value
+            trigger(target, key)
+            return true
+        }
+    })
+
+    function track(target, key) {
+        if (!activeEffect) return
+        let depsMap = bucket.get(target)
+        if (!depsMap) {
+            depsMap = new Map()
+            bucket.set(target, depsMap)
+        }
+        let deps = depsMap.get(key)
+        if (!deps) {
+            deps = new Set()
+            depsMap.set(key, deps)
+        }
+        deps.add(activeEffect)
+        activeEffect.deps.push(deps)
+        console.log(`收集副作用函数：`, key)
+    }
+
+    function trigger(target, key) {
+        const depsMap = bucket.get(target)
+        if (!depsMap) return
+        const effects = depsMap.get(key)
+        const effectsToRun = new Set()
+        effects && effects.forEach(effectFn => {
+            if (effectFn !== activeEffect) {
+                effectsToRun.add(effectFn)
+            }
+        })
+        effectsToRun.forEach(effectFn => {
+            if (effectFn.options.scheduler) {
+                effectFn.options.scheduler(() => effectFn(key))
+            } else {
+                effectFn(key)
+            }
+        })
+        console.log(`触发更新：`, key)
+    }
+
+    function cleanup(effectFn) {
+        for (let i = 0; i < effectFn.deps.length; i++) {
+            const deps = effectFn.deps[i]
+            deps.delete(effectFn)
+        }
+        effectFn.deps.length = 0
+    }
+
+    function effect(fn, options = {}) {
+        const effectFn = (key) => {
+            cleanup(effectFn)
+            activeEffect = effectFn
+            effectStack.push(effectFn)
+            const res = fn(key)
+            effectStack.pop()
+            activeEffect = effectStack[effectStack.length - 1]
+            return res
+        }
+        effectFn.options = options
+        effectFn.deps = []
+        if (options.lazy) {
+            return effectFn
+        }
+        effectFn()
+    }
+
+    function traverse(value, seen = new Set()) {
+        if (typeof value !== 'object' || value === null || seen.has(value)) return
+        seen.add(value)
+        for (const key in value) {
+            traverse(value[key], seen)
+        }
+        return value
+    }
+
+    function watch(source, cb, options = {}) {
+        let getter
+        if (typeof source === 'function') {
+            getter = source
+        } else {
+            getter = () => traverse(source)
+        }
+
+        let oldValue, newValue
+
+        const job = () => {
+            newValue = effectFn()
+            cb(newValue, oldValue)
+            oldValue = newValue
+        }
+
+        const effectFn = effect(() => getter(), {
+            lazy: true,
+            scheduler: () => {
+                if (options.flush === 'post') {
+                    Promise.resolve().then(job)
+                } else {
+                    job()
+                }
+            }
+        })
+
+        if (options.immediate) {
+            job()
+        } else {
+            oldValue = effectFn()
+        }
+    }
+
+    console.log(bucket)
+
+    effect(() => {
+        /**
+         * 读取访问器属性
+         */
+        console.warn('effect>bar:', p.bar)
+    })
+
+    /**
+     * **************************************
+     * 问题：
+     * 修改 p.foo 的值，不会触发访问器属性的副作用函数
+     * **************************************
+     */
+    p.foo++
+
+</script>
+</html>

@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>5.2 JavaScript 对象及 Proxy 的工作原理</title>
+</head>
+<body>
+
+</body>
+<script>
+    const obj = {
+        foo: 1
+    }
+    const p = new Proxy(obj, {
+        deleteProperty(target, key) {
+            return Reflect.deleteProperty(target, key)
+        }
+    })
+
+    delete p.foo
+    console.log('p.foo:', p.foo)
+    console.log('obj.foo:', obj.foo)
+</script>
+</html>

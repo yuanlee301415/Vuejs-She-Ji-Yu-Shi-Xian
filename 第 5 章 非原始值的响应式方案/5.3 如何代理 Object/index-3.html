@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>5.3-3 如何代理 Object</title>
+</head>
+<body>
+
+</body>
+<script>
+    let activeEffect
+    const effectStack = []
+    const bucket = new WeakMap()
+    const obj = {foo: 1}
+    const ITERATE_KEY = Symbol()
+    const p = new Proxy(obj, {
+        get(target, key, receiver) {
+            track(target, key)
+            return Reflect.get(target, key, receiver)
+        },
+        set(target, key, value, receiver) {
+            const res = Reflect.set(target, key, value, receiver)
+            trigger(target, key)
+            return res
+        },
+        has(target, key) {
+            track(target, key)
+            return Reflect.has(target, key)
+        },
+        ownKeys(target) {
+            track(target, ITERATE_KEY)
+            return Reflect.ownKeys(target)
+        }
+    })
+
+    function track(target, key) {
+        if (!activeEffect) return
+        let depsMap = bucket.get(target)
+        if (!depsMap) {
+            depsMap = new Map()
+            bucket.set(target, depsMap)
+        }
+        let deps = depsMap.get(key)
+        if (!deps) {
+            deps = new Set()
+            depsMap.set(key, deps)
+        }
+        deps.add(activeEffect)
+        activeEffect.deps.push(deps)
+        console.log(`收集副作用函数：`, key)
+    }
+
+    function trigger(target, key) {
+        const depsMap = bucket.get(target)
+        if (!depsMap) return
+        const effects = depsMap.get(key)
+        console.log('effects:', effects)
+
+        const iterateEffects = depsMap.get(ITERATE_KEY)
+        console.log('iterateEffects:', iterateEffects)
+
+        const effectsToRun = new Set()
+
+        effects && effects.forEach(effectFn => {
+            if (effectFn !== activeEffect) {
+                effectsToRun.add(effectFn)
+            }
+        })
+        iterateEffects && iterateEffects.forEach(effectFn => {
+            if (effectFn !== activeEffect) {
+                effectsToRun.add(effectFn)
+            }
+        })
+        effectsToRun.forEach(effectFn => {
+            if (effectFn.options.scheduler) {
+                effectFn.options.scheduler(() => effectFn(key))
+            } else {
+                effectFn(key)
+            }
+        })
+        console.log(`触发更新：`, key)
+    }
+
+    function cleanup(effectFn) {
+        for (let i = 0; i < effectFn.deps.length; i++) {
+            const deps = effectFn.deps[i]
+            deps.delete(effectFn)
+        }
+        effectFn.deps.length = 0
+    }
+
+    function effect(fn, options = {}) {
+        const effectFn = (key) => {
+            cleanup(effectFn)
+            activeEffect = effectFn
+            effectStack.push(effectFn)
+            const res = fn(key)
+            effectStack.pop()
+            activeEffect = effectStack[effectStack.length - 1]
+            return res
+        }
+        effectFn.options = options
+        effectFn.deps = []
+        if (options.lazy) {
+            return effectFn
+        }
+        effectFn()
+    }
+
+    function traverse(value, seen = new Set()) {
+        if (typeof value !== 'object' || value === null || seen.has(value)) return
+        seen.add(value)
+        for (const key in value) {
+            traverse(value[key], seen)
+        }
+        return value
+    }
+
+    function watch(source, cb, options = {}) {
+        let getter
+        if (typeof source === 'function') {
+            getter = source
+        } else {
+            getter = () => traverse(source)
+        }
+
+        let oldValue, newValue
+
+        const job = () => {
+            newValue = effectFn()
+            cb(newValue, oldValue)
+            oldValue = newValue
+        }
+
+        const effectFn = effect(() => getter(), {
+            lazy: true,
+            scheduler: () => {
+                if (options.flush === 'post') {
+                    Promise.resolve().then(job)
+                } else {
+                    job()
+                }
+            }
+        })
+
+        if (options.immediate) {
+            job()
+        } else {
+            oldValue = effectFn()
+        }
+    }
+
+    effect(() => {
+        console.warn('effect run')
+        for (const key in p) {
+            console.log('for...in>key:', key)
+        }
+    })
+    console.log(bucket)
+
+    /**
+     * **************************************
+     * 问题：
+     * 修改原有属性，不需要触发 for...in 循环的副作用函数
+     * **************************************
+     */
+    p.foo = 200
+
+</script>
+</html>
