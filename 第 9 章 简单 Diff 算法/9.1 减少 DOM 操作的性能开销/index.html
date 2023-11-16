@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>9.1 减少 DOM 操作的性能开销</title>
+</head>
+<body>
+<button onclick="update()">单击按钮，逐步更新</button>
+<div id="app"></div>
+</body>
+
+<script>
+    /**
+     * **************************************
+     * 减少 DOM 操作的性能开销
+     * **************************************
+     */
+
+    const options = {
+        createElement(tag) {
+            return document.createElement(tag)
+        },
+
+        setElementText(el, text) {
+            el.textContent = text
+        },
+        insert(el, parent, anchor) {
+            parent.insertBefore(el, anchor)
+        },
+        createText(text) {
+            return document.createTextNode(text)
+        },
+        setText(el, text) {
+            el.nodeValue = text
+        },
+        patchProps(el, key, prevValue, nextValue) {
+            if (/^on/.test(key)) {
+                const name = key.slice(2).toLowerCase()
+                const invokers = el._vei || (el._vei = {})
+                let invoker = invokers[key]
+                if (nextValue) {
+                    if (!invoker) {
+                        invoker = el._vei[key] = e => {
+                            if (e.timeStamp < invoker.attached) return
+                            if (Array.isArray(invoker.value)) {
+                                invoker.value.forEach(fn => {
+                                    fn(e)
+                                })
+                            } else {
+                                invoker.value(e)
+                            }
+                        }
+                        invoker.value = nextValue
+                        invoker.attached = performance.now()
+
+                        el.addEventListener(name, invoker)
+                    } else {
+                        invoker.value = nextValue
+                    }
+                } else if (invoker) {
+                    el.removeEventListener(name, invoker)
+                }
+            } else if (key === 'class') {
+                el.className = normalizeClass(nextValue)
+            } else if (shouldSetAsProps(el, key, nextValue)) {
+                if (typeof el[key] === 'boolean' && nextValue === '') {
+                    el[key] = true
+                } else {
+                    el[key] = nextValue
+                }
+            } else {
+                el.setAttribute(key, nextValue)
+            }
+        }
+    }
+
+    const Text = Symbol('TextVNode')
+    const Comment = Symbol('CommentVNode')
+    const Fragment = Symbol('FragmentVNode')
+
+    /**
+     * 初始子节点（3 个 P 标签节点）
+     */
+    const vnode = {
+        type: 'div', children: [
+            {type: 'p', children: '01'},
+            {type: 'p', children: '02'},
+            {type: 'p', children: '03'},
+        ]
+    }
+
+    function shouldSetAsProps(el, key) {
+        if (el.tagName === 'INPUT' && key === 'form') return false
+        return key in el
+    }
+
+    function normalizeClass(value, classNames = []) {
+        const type = Array.isArray(value) ? 'array' : typeof value
+        switch (type) {
+            case 'string':
+                classNames.push(value)
+                break
+            case 'object':
+                Object.entries(value).forEach(([key, val]) => {
+                    val && classNames.push(key)
+                })
+                break
+            case 'array':
+                value.forEach(_ => normalizeClass(_, classNames))
+                break
+        }
+        return classNames.join(' ')
+    }
+
+    function createRenderer(options) {
+        const {createElement, setElementText, insert, patchProps, createText, setText} = options
+
+        function mountElement(vnode, container) {
+            const el = createElement(vnode.type)
+            vnode.el = el
+
+            if (typeof vnode.children === 'string') {
+                setElementText(el, vnode.children)
+            } else if (Array.isArray(vnode.children)) {
+                vnode.children.forEach(child => {
+                    patch(null, child, el)
+                })
+            }
+
+            if (vnode.props) {
+                for (const key in vnode.props) {
+                    const value = vnode.props[key]
+                    patchProps(el, key, null, value)
+                }
+            }
+
+            insert(el, container)
+        }
+
+        function unmount(vnode) {
+            if (vnode.type === Fragment) {
+                vnode.children.forEach(child => unmount(child))
+                return
+            }
+            const parent = vnode.el.parentNode
+            parent && parent.removeChild(vnode.el)
+        }
+
+        function patchElement(n1, n2) {
+            const el = n2.el = n1.el
+            const oldProps = n1.props
+            const newProps = n2.props
+            for (const key in newProps) {
+                if (newProps[key] !== oldProps[key]) {
+                    patchProps(el, key, oldProps[key], newProps[key])
+                }
+            }
+
+            for (const key in oldProps) {
+                if (!(key in newProps)) {
+                    patchProps(el, key, oldProps[key], null)
+                }
+            }
+
+            patchChildren(n1, n2, el)
+        }
+
+        function patchChildren(n1, n2, container) {
+            if (typeof n2.children === 'string') {
+                if (Array.isArray(n1.children)) {
+                    n1.children.forEach(child => unmount(child))
+                }
+                setElementText(container, n2.children)
+            } else if (Array.isArray(n2.children)) {
+                if (Array.isArray(n1.children)) {
+                    /**
+                     * 重新实现两组子节点的更新方式
+                     */
+                    const oldChildren = n1.children
+                    const newChildren = n2.children
+                    const oldLength = oldChildren.length
+                    const newLength = newChildren.length
+                    const commonLength = Math.min(oldLength, newLength)
+
+                    /**
+                     * 遍历 commonLength 次
+                     */
+                    for (let i = 0; i < commonLength; i++) {
+                        console.log('更新公共次数：', commonLength)
+                        patch(oldChildren[i], newChildren[i], container)
+                    }
+
+                    if (newLength > oldLength) {
+                        /**
+                         * 新的子节点数量大于旧的子节点数量，说明有新的子节点需要挂载
+                         */
+                        for (let i = commonLength; i < newLength; i++) {
+                            console.log('挂载新节点：', newChildren[i])
+                            patch(null, newChildren[i], container)
+                        }
+                    } else if (oldLength > newLength) {
+                        /**
+                         * 新的子节点数量小于旧的子节点数量，说明有旧的子节点需要卸载
+                         */
+                        for (let i = commonLength; i < oldLength; i++) {
+                            console.log('卸载旧节点：', oldChildren[i])
+                            unmount(oldChildren[i])
+                        }
+                    }
+                } else {
+                    setElementText(container, '')
+                    n2.children.forEach(child => patch(null, child, container))
+                }
+            } else {
+                if (Array.isArray(n1.children)) {
+                    n1.children.forEach(child => unmount(child))
+                } else if (typeof n1.children === 'string') {
+                    setElementText(container, '')
+                }
+            }
+        }
+
+        function patch(n1, n2, container) {
+            if (n1 && n1.type !== n2.type) {
+                unmount(n1)
+                n1 = null
+            }
+
+            const {type} = n2
+            if (typeof type === 'string') {
+                if (!n1) {
+                    mountElement(n2, container)
+                } else {
+                    patchElement(n1, n2)
+                }
+            } else if (type === Text) {
+                if (!n1) {
+                    const el = n2.el = createText(n2.children)
+                    insert(el, container)
+                } else {
+                    const el = n2.el = n1.el
+                    if (n2.children !== n1.children) {
+                        setText(el, n2.children)
+                    }
+                }
+            } else if (type === Comment) {
+                if (!n1) {
+                    const el = n2.el = document.createComment(n2.children)
+                    insert(el, container)
+                } else {
+                    const el = n2.el = n1.el
+                    if (n2.children !== n1.children) {
+                        setText(el, n2.children)
+                    }
+                }
+            } else if (type === Fragment) {
+                if (!n1) {
+                    n2.children.forEach(child => patch(null, child, container))
+                } else {
+                    patchChildren(n1, n2, container)
+                }
+            } else if (typeof type === 'object') {
+                // 组件
+            } else {
+                // 其它类型
+            }
+        }
+
+        function render(vnode, container) {
+            if (vnode) {
+                patch(container._vnode, vnode, container)
+            } else {
+                container._vnode && unmount(container._vnode)
+            }
+            container._vnode = vnode
+        }
+
+        return {
+            render
+        }
+    }
+
+    const renderer = createRenderer(options)
+    const container = document.querySelector('#app')
+    renderer.render(vnode, container)
+
+    const vnodes = [
+        {
+            ...vnode,
+            /**
+             * 新旧子节点数量相同
+             */
+            children: [
+                {type: 'p', children: '11'},
+                {type: 'p', children: '12'},
+                {type: 'p', children: '13'},
+            ]
+        },
+        {
+            ...vnode,
+            /**
+             * 新子节点数量大于旧子节点数量
+             */
+            children: [
+                {type: 'p', children: '21'},
+                {type: 'p', children: '22'},
+                {type: 'p', children: '23'},
+                {type: 'p', children: '24'},
+                {type: 'p', children: '25'},
+            ]
+        },
+        {
+            ...vnode,
+            /**
+             * 新子节点数量小于旧子节点数量
+             */
+            children: [
+                {type: 'p', children: '31'},
+                {type: 'p', children: '32'}
+            ]
+        }
+    ]
+
+    function update() {
+        const vnode = vnodes.shift()
+        console.warn('update>vnode:', vnode)
+        vnode && renderer.render(vnode, container)
+    }
+
+</script>
+</html>
