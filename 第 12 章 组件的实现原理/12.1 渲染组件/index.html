@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>12.1 渲染组件</title>
+</head>
+<body>
+<div id="app"></div>
+</body>
+
+<script>
+    /**
+     * **************************************
+     * 渲染组件
+     * **************************************
+     */
+
+    const options = {
+        createElement(tag) {
+            return document.createElement(tag)
+        },
+
+        setElementText(el, text) {
+            el.textContent = text
+        },
+        insert(el, parent, anchor) {
+            parent.insertBefore(el, anchor)
+        },
+        createText(text) {
+            return document.createTextNode(text)
+        },
+        setText(el, text) {
+            el.nodeValue = text
+        },
+        patchProps(el, key, prevValue, nextValue) {
+            if (/^on/.test(key)) {
+                const name = key.slice(2).toLowerCase()
+                const invokers = el._vei || (el._vei = {})
+                let invoker = invokers[key]
+                if (nextValue) {
+                    if (!invoker) {
+                        invoker = el._vei[key] = e => {
+                            if (e.timeStamp < invoker.attached) return
+                            if (Array.isArray(invoker.value)) {
+                                invoker.value.forEach(fn => {
+                                    fn(e)
+                                })
+                            } else {
+                                invoker.value(e)
+                            }
+                        }
+                        invoker.value = nextValue
+                        invoker.attached = performance.now()
+
+                        el.addEventListener(name, invoker)
+                    } else {
+                        invoker.value = nextValue
+                    }
+                } else if (invoker) {
+                    el.removeEventListener(name, invoker)
+                }
+            } else if (key === 'class') {
+                el.className = normalizeClass(nextValue)
+            } else if (shouldSetAsProps(el, key, nextValue)) {
+                if (typeof el[key] === 'boolean' && nextValue === '') {
+                    el[key] = true
+                } else {
+                    el[key] = nextValue
+                }
+            } else {
+                el.setAttribute(key, nextValue)
+            }
+        }
+    }
+
+    const Text = Symbol('TextVNode')
+    const Comment = Symbol('CommentVNode')
+    const Fragment = Symbol('FragmentVNode')
+
+    function shouldSetAsProps(el, key) {
+        if (el.tagName === 'INPUT' && key === 'form') return false
+        return key in el
+    }
+
+    function normalizeClass(value, classNames = []) {
+        const type = Array.isArray(value) ? 'array' : typeof value
+        switch (type) {
+            case 'string':
+                classNames.push(value)
+                break
+            case 'object':
+                Object.entries(value).forEach(([key, val]) => {
+                    val && classNames.push(key)
+                })
+                break
+            case 'array':
+                value.forEach(_ => normalizeClass(_, classNames))
+                break
+        }
+        return classNames.join(' ')
+    }
+
+    function createRenderer(options) {
+        const {createElement, setElementText, insert, patchProps, createText, setText} = options
+
+        function mountElement(vnode, container, anchor) {
+            const el = createElement(vnode.type)
+            vnode.el = el
+
+            if (typeof vnode.children === 'string') {
+                setElementText(el, vnode.children)
+            } else if (Array.isArray(vnode.children)) {
+                vnode.children.forEach(child => {
+                    patch(null, child, el)
+                })
+            }
+
+            if (vnode.props) {
+                for (const key in vnode.props) {
+                    const value = vnode.props[key]
+                    patchProps(el, key, null, value)
+                }
+            }
+
+            insert(el, container, anchor)
+        }
+
+        function unmount(vnode) {
+            if (vnode.type === Fragment) {
+                vnode.children.forEach(child => unmount(child))
+                return
+            }
+            const parent = vnode.el.parentNode
+            parent && parent.removeChild(vnode.el)
+        }
+
+        function patchElement(n1, n2) {
+            const el = n2.el = n1.el
+            const oldProps = n1.props
+            const newProps = n2.props
+            for (const key in newProps) {
+                if (newProps[key] !== oldProps[key]) {
+                    patchProps(el, key, oldProps[key], newProps[key])
+                }
+            }
+
+            for (const key in oldProps) {
+                if (!(key in newProps)) {
+                    patchProps(el, key, oldProps[key], null)
+                }
+            }
+
+            patchChildren(n1, n2, el)
+        }
+
+        function patchChildren(n1, n2, container) {
+            if (typeof n2.children === 'string') {
+                if (Array.isArray(n1.children)) {
+                    n1.children.forEach(child => unmount(child))
+                }
+                setElementText(container, n2.children)
+            } else if (Array.isArray(n2.children)) {
+                if (Array.isArray(n1.children)) {
+                    const oldChildren = n1.children
+                    const newChildren = n2.children
+                    let lastIndex = 0
+
+                    for (let i = 0; i < newChildren.length; i++) {
+                        const newVnode = newChildren[i]
+                        let j = 0
+                        let find = false
+                        for (j = 0; j < oldChildren.length; j++) {
+                            const oldVnode = oldChildren[j]
+                            if (newVnode.key === oldVnode.key) {
+                                patch(oldVnode, newVnode, container)
+                                find = true
+                                if (j < lastIndex) {
+                                    const prevVNode = newChildren[i- 1]
+                                    if (prevVNode) {
+                                        const anchor = prevVNode.el.nextSibling
+                                        insert(newVnode.el, container, anchor)
+                                    }
+                                } else {
+                                    lastIndex = j
+                                }
+                                break
+                            }
+                        }
+
+                        if (!find) {
+                            const prevVNode = newChildren[i- 1]
+                            let anchor = null
+                            if (prevVNode) {
+                                anchor = prevVNode.el.nextSibling
+                            } else {
+                                anchor = container.firstChild
+                            }
+                            patch(null, newVnode, container, anchor)
+                        }
+                    }
+
+                    for (let i = 0; i < oldChildren.length; i++) {
+                        const oldVnode = oldChildren[i]
+                        const has = newChildren.find(vnode => vnode.key === oldVnode.key)
+                        if (!has) {
+                            unmount(oldVnode)
+                        }
+                    }
+                } else {
+                    setElementText(container, '')
+                    n2.children.forEach(child => patch(null, child, container))
+                }
+            } else {
+                if (Array.isArray(n1.children)) {
+                    n1.children.forEach(child => unmount(child))
+                } else if (typeof n1.children === 'string') {
+                    setElementText(container, '')
+                }
+            }
+        }
+
+        /**
+         * 挂载组件
+         * @param {VNode} vnode - 虚拟节点
+         * @param {Node} container - 容器
+         * @param {Node} anchor - 锚点
+         */
+        function mountComponent(vnode, container, anchor) {
+            const componentOptions = vnode.type
+            /**
+             * 获取组件的渲染函数 render
+             */
+            const { render } = componentOptions
+
+            /**
+             * 执行渲染函数，获取组件要渲染的内容（即 render 函数返回的虚拟 DOM）
+             */
+            const subTree = render()
+
+            /**
+             * 挂载组件所描述的内容
+             */
+            patch(null, subTree, container, anchor)
+        }
+
+        function patch(n1, n2, container, anchor) {
+            if (n1 && n1.type !== n2.type) {
+                unmount(n1)
+                n1 = null
+            }
+
+            const {type} = n2
+            if (typeof type === 'string') {
+                if (!n1) {
+                    mountElement(n2, container, anchor)
+                } else {
+                    patchElement(n1, n2)
+                }
+            } else if (type === Text) {
+                if (!n1) {
+                    const el = n2.el = createText(n2.children)
+                    insert(el, container)
+                } else {
+                    const el = n2.el = n1.el
+                    if (n2.children !== n1.children) {
+                        setText(el, n2.children)
+                    }
+                }
+            } else if (type === Comment) {
+                if (!n1) {
+                    const el = n2.el = document.createComment(n2.children)
+                    insert(el, container)
+                } else {
+                    const el = n2.el = n1.el
+                    if (n2.children !== n1.children) {
+                        setText(el, n2.children)
+                    }
+                }
+            } else if (type === Fragment) {
+                if (!n1) {
+                    n2.children.forEach(child => patch(null, child, container))
+                } else {
+                    patchChildren(n1, n2, container)
+                }
+            }
+
+            /**
+             * 组件
+             */
+            else if (typeof type === 'object') {
+                if (!n1) {
+                    /**
+                     * 挂载组件
+                     */
+                    mountComponent(n2, container, anchor)
+                } else {
+                    // 更新组件
+                }
+            } else {
+                // 其它类型
+            }
+        }
+
+        function render(vnode, container) {
+            if (vnode) {
+                patch(container._vnode, vnode, container)
+            } else {
+                container._vnode && unmount(container._vnode)
+            }
+            container._vnode = vnode
+        }
+
+        return {
+            render
+        }
+    }
+
+    const renderer = createRenderer(options)
+    const container = document.querySelector('#app')
+
+    /**
+     * 组件
+     * @type {Component}
+     */
+    const MyComponent = {
+        name: 'MyComp',
+        render() {
+            return {
+                type: 'div',
+                children: '组件文本内容'
+            }
+        }
+    }
+
+    const CompVnode = {
+        type: MyComponent
+    }
+
+    /**
+     * 渲染组件
+     */
+    renderer.render(CompVnode, container)
+
+</script>
+</html>
