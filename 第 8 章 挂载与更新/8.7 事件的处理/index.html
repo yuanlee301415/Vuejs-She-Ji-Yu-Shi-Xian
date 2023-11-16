@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>8.7 事件的处理</title>
+</head>
+<body>
+<div id="app"></div>
+</body>
+<script>
+    /**
+     * **************************************
+     * 事件的处理
+     *
+     * 绑定事件
+     * **************************************
+     */
+
+    const options = {
+        createElement(tag) {
+            return document.createElement(tag)
+        },
+
+        setElementText(el, text) {
+            el.textContent = text
+        },
+        insert(el, parent, anchor) {
+            parent.insertBefore(el, anchor)
+        },
+        patchProps(el, key, prevValue, nextValue) {
+            /**
+             * 绑定事件
+             */
+            if (/^on/.test(key)) {
+                const name = key.slice(2).toLowerCase()
+                /**
+                 * 获取为该元素伪造的事件处理函数
+                 */
+                let invoker = el._vei
+                if (nextValue) {
+                    if (!invoker) {
+                        /**
+                         * 如果没有 invoker，则将一个伪造的 invoker 缓存到 el._vei 中
+                         */
+                        invoker = el._vei = e => {
+                            /**
+                             * 当伪造的事件处理函数执行时，会执行真正的事件处理函数
+                             */
+                            invoker.value(e)
+                        }
+
+                        /**
+                         * 将真正的事件处理函数赋值给 invoker.value
+                         */
+                        invoker.value = nextValue
+
+                        /**
+                         * 绑定伪造的事件
+                         */
+                        el.addEventListener(name, invoker)
+                    } else {
+                        /**
+                         * 如果 invoker 存在，则更新事件处理函数
+                         */
+                        invoker.value = nextValue
+                    }
+                } else if (invoker) {
+                    /**
+                     * 新的事件处理函数不存在，且之前绑定的 invoker 存在，则移除绑定
+                     */
+                    el.removeEventListener(name, invoker)
+                }
+            } else if (key === 'class') {
+                el.className = normalizeClass(nextValue)
+            } else if (shouldSetAsProps(el, key, nextValue)) {
+                if (typeof el[key] === 'boolean' && nextValue === '') {
+                    el[key] = true
+                } else {
+                    el[key] = nextValue
+                }
+            } else {
+                el.setAttribute(key, nextValue)
+            }
+        }
+    }
+
+    const vnode = {
+        type: 'button',
+        children: 'Click me.',
+        props: {
+            /**
+             * click 事件
+             */
+            onClick(e) {
+                console.log('Click>event:', e)
+            }
+        }
+    }
+
+    function createRenderer(options) {
+        const {createElement, setElementText, insert, patchProps} = options
+
+        function mountElement(vnode, container) {
+            const el = createElement(vnode.type)
+            vnode.el = el
+
+            if (typeof vnode.children === 'string') {
+                setElementText(el, vnode.children)
+            } else if (Array.isArray(vnode.children)) {
+                vnode.children.forEach(child => {
+                    patch(null, child, el)
+                })
+            }
+
+            if (vnode.props) {
+                for (const key in vnode.props) {
+                    const value = vnode.props[key]
+                    patchProps(el, key, null, value)
+                }
+            }
+
+            insert(el, container)
+        }
+
+        function unmount(vnode) {
+            const parent = vnode.el.parentNode
+            parent && parent.removeChild(vnode.el)
+        }
+
+        function patch(n1, n2, container) {
+            if (n1 && n1.type !== n2.type) {
+                unmount(n1)
+                n1 = null
+            }
+
+            const {type} = n2
+            if (typeof type === 'string') {
+                if (!n1) {
+                    mountElement(n2, container)
+                } else {
+                    // 更新
+                }
+            } else if (typeof type === 'object') {
+                // 组件
+            } else {
+                // 其它类型
+            }
+        }
+
+        function render(vnode, container) {
+            if (vnode) {
+                patch(container._vnode, vnode, container)
+            } else {
+                container._vnode && unmount(container._vnode)
+            }
+            container._vnode = vnode
+        }
+
+        return {
+            render
+        }
+    }
+
+    function shouldSetAsProps(el, key) {
+        if (el.tagName === 'INPUT' && key === 'form') return false
+        return key in el
+    }
+
+    function normalizeClass(value, classNames = []) {
+        const type = Array.isArray(value) ? 'array' : typeof value
+        switch (type) {
+            case 'string':
+                classNames.push(value)
+                break
+            case 'object':
+                Object.entries(value).forEach(([key, val]) => {
+                    val && classNames.push(key)
+                })
+                break
+            case 'array':
+                value.forEach(_ => normalizeClass(_, classNames))
+                break
+        }
+        return classNames.join(' ')
+    }
+
+
+    const renderer = createRenderer(options)
+    const container = document.querySelector('#app')
+    renderer.render(vnode, container)
+
+</script>
+</html>

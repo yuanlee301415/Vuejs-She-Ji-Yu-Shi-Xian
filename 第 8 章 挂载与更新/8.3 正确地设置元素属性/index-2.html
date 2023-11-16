@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>8.3-2 正确地设置元素属性</title>
+</head>
+<body>
+<div id="app"></div>
+</body>
+<script>
+    /**
+     * **************************************
+     * 将属性设置相关操作封装到 patchProps 函数中，并作为渲染器选项传递
+     * **************************************
+     */
+
+    const options = {
+        createElement(tag) {
+            return document.createElement(tag)
+        },
+
+        setElementText(el, text) {
+            el.textContent = text
+        },
+        insert(el, parent, anchor) {
+            parent.insertBefore(el, anchor)
+        },
+
+        /**
+         * 设置属性
+         * @param {HTMLElement} el
+         * @param {string} key - DOM 属性名
+         * @param {*} prevValue - 旧的属性值
+         * @param {*} nextValue - 新的属性值
+         */
+        patchProps(el, key, prevValue, nextValue) {
+            if (shouldSetAsProps(el, key, nextValue)) {
+                if (typeof el[key] === 'boolean' && nextValue === '') {
+                    el[key] = true
+                } else {
+                    el[key] = nextValue
+                }
+            } else {
+                el.setAttribute(key, nextValue)
+            }
+        }
+    }
+
+    const vnode = {
+        type: 'div',
+        children: [
+            {
+                type: 'div',
+                children: [
+                    {
+                        type: 'h1',
+                        children: 'Disabled 属性'
+                    },
+                    {
+                        type: 'button',
+                        props: {
+                            disabled: false
+                        },
+                        children: 'disabled=false'
+                    },
+                    {
+                        type: 'button',
+                        props: {
+                            disabled: ''
+                        },
+                        children: 'disabled=空字符串'
+                    },
+                    {
+                        type: 'button',
+                        props: {
+                            role: 'progressbar'
+                        },
+                        children: '没有对应 DOM 属性'
+                    }
+                ]
+            },
+            {
+                type: 'hr'
+            },
+            {
+                type: 'div',
+                children: [
+                    {
+                        type: 'input',
+                        props: {
+                            form: 'form1'
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+
+    /**
+     * @param {RendererOptions} options
+     * @param {{(el:HTMLElement, key:string, prevValue: any, nextValue: any): boolean}} options.patchProps - 设置属性
+     */
+    function createRenderer(options) {
+        const {createElement, setElementText, insert, patchProps} = options
+
+        function mountElement(vnode, container) {
+            const el = createElement(vnode.type)
+            if (typeof vnode.children === 'string') {
+                setElementText(el, vnode.children)
+            } else if (Array.isArray(vnode.children)) {
+                vnode.children.forEach(child => {
+                    patch(null, child, el)
+                })
+            }
+
+            if (vnode.props) {
+                for (const key in vnode.props) {
+                    const value = vnode.props[key]
+                    /**
+                     * 设置属性
+                     */
+                    patchProps(el, key, null, value)
+                }
+            }
+
+            insert(el, container)
+        }
+
+        function patch(n1, n2, container) {
+            if (!n1) {
+                mountElement(n2, container)
+            } else {
+                // Todo: 打补丁
+            }
+        }
+
+        function render(vnode, container) {
+            if (vnode) {
+                patch(container._vnode, vnode, container)
+            } else {
+                if (container._vnode) {
+                    container.innerHTML = ''
+                }
+            }
+            container._vnode = vnode
+        }
+
+        return {
+            render
+        }
+    }
+
+    function shouldSetAsProps(el, key) {
+        if (el.tagName === 'INPUT' && key === 'form') return false
+        return key in el
+    }
+
+
+    const renderer = createRenderer(options)
+    renderer.render(vnode, document.querySelector('#app'))
+
+</script>
+</html>

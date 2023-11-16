@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>8.5 卸载操作</title>
+</head>
+<body>
+<div id="app"></div>
+</body>
+
+<script>
+    /**
+     * **************************************
+     * 卸载操作
+     * **************************************
+     */
+
+    const options = {
+        createElement(tag) {
+            return document.createElement(tag)
+        },
+
+        setElementText(el, text) {
+            el.textContent = text
+        },
+        insert(el, parent, anchor) {
+            parent.insertBefore(el, anchor)
+        },
+        patchProps(el, key, prevValue, nextValue) {
+            if (key === 'class') {
+                el.className = normalizeClass(nextValue)
+            } else if (shouldSetAsProps(el, key, nextValue)) {
+                if (typeof el[key] === 'boolean' && nextValue === '') {
+                    el[key] = true
+                } else {
+                    el[key] = nextValue
+                }
+            } else {
+                el.setAttribute(key, nextValue)
+            }
+        }
+    }
+
+    const vnode = {
+        type: 'div',
+        children: [
+            {
+                type: 'h1',
+                children: '卸载操作'
+            }
+        ]
+    }
+
+    function createRenderer(options) {
+        const {createElement, setElementText, insert, patchProps} = options
+
+        function mountElement(vnode, container) {
+            const el = createElement(vnode.type)
+            /**
+             * vnode.el 引用真实的 DOM
+             */
+            vnode.el = el
+
+            if (typeof vnode.children === 'string') {
+                setElementText(el, vnode.children)
+            } else if (Array.isArray(vnode.children)) {
+                vnode.children.forEach(child => {
+                    patch(null, child, el)
+                })
+            }
+
+            if (vnode.props) {
+                for (const key in vnode.props) {
+                    const value = vnode.props[key]
+                    patchProps(el, key, null, value)
+                }
+            }
+
+            insert(el, container)
+        }
+
+        /**
+         * 卸载
+         * @param {VNode} vnode
+         */
+        function unmount(vnode) {
+            const parent = vnode.el.parentNode
+            parent && parent.removeChild(vnode.el)
+        }
+
+        function patch(n1, n2, container) {
+            if (!n1) {
+                mountElement(n2, container)
+            } else {
+                // Todo: 打补丁
+            }
+        }
+
+        function render(vnode, container) {
+            if (vnode) {
+                patch(container._vnode, vnode, container)
+            } else {
+                /**
+                 * 执行卸载
+                 */
+                container._vnode && unmount(container._vnode)
+            }
+            container._vnode = vnode
+        }
+
+        return {
+            render
+        }
+    }
+
+    function shouldSetAsProps(el, key) {
+        if (el.tagName === 'INPUT' && key === 'form') return false
+        return key in el
+    }
+
+    function normalizeClass(value, classNames = []) {
+        const type = Array.isArray(value) ? 'array' : typeof value
+        switch (type) {
+            case 'string':
+                classNames.push(value)
+                break
+            case 'object':
+                Object.entries(value).forEach(([key, val]) => {
+                    val && classNames.push(key)
+                })
+                break
+            case 'array':
+                value.forEach(_ => normalizeClass(_, classNames))
+                break
+        }
+        return classNames.join(' ')
+    }
+
+
+    const renderer = createRenderer(options)
+    const container = document.querySelector('#app')
+    renderer.render(vnode, container)
+    console.log('挂载后》container._vnode:', container._vnode)
+
+    setTimeout(() => {
+        /**
+         * 触发卸载
+         */
+        renderer.render(null, container)
+        console.log('卸载后》container._vnode:', container._vnode)
+    }, 500)
+
+</script>
+</html>

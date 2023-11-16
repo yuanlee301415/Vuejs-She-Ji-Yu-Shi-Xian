@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>8.4 class 的处理</title>
+</head>
+<body>
+<div id="app"></div>
+</body>
+<script>
+    /**
+     * **************************************
+     * class 的处理
+     * **************************************
+     */
+
+    const options = {
+        createElement(tag) {
+            return document.createElement(tag)
+        },
+
+        setElementText(el, text) {
+            el.textContent = text
+        },
+        insert(el, parent, anchor) {
+            parent.insertBefore(el, anchor)
+        },
+        patchProps(el, key, prevValue, nextValue) {
+            if (key === 'class') {
+                /**
+                 * 对 class 进行特殊处理
+                 */
+                el.className = normalizeClass(nextValue)
+            } else if (shouldSetAsProps(el, key, nextValue)) {
+                if (typeof el[key] === 'boolean' && nextValue === '') {
+                    el[key] = true
+                } else {
+                    el[key] = nextValue
+                }
+            } else {
+                el.setAttribute(key, nextValue)
+            }
+        }
+    }
+
+    const vnode = {
+        type: 'div',
+        children: [
+            {
+                type: 'h1',
+                children: 'class 属性'
+            },
+            {
+                type: 'p',
+                props: {
+                    /**
+                     * class 的值为字符串
+                     */
+                    class: 'text-1'
+                },
+                children: `字符串：'text-1'`
+            },
+            {
+                type: 'p',
+                props: {
+                    id: 'text-2',
+                    /**
+                     * class 的值为字对象
+                     */
+                    class: {'text-21': true, 'text-22': false}
+                },
+                children: `对象：{'text-21': true, 'text-22': false}`
+            },
+            {
+                type: 'p',
+                props: {
+                    id: 'text-3',
+                    /**
+                     * class 的值为字数组
+                     */
+                    class: ['text-31', 'text-32']
+                },
+                children: `数组：['text-31', 'text-32']`
+            },
+            {
+                type: 'p',
+                props: {
+                    id: 'text-4',
+                    /**
+                     * class 的值为字：嵌套的数组和对象
+                     */
+                    class: ['text-41', 'text-42', {'text-43': true, 'text-44': false}, ['text-45', {
+                        'text-46': true,
+                        'text-47': false
+                    }, ['text-48']]]
+                },
+                children: `嵌套的数组和对象：['text-41', 'text-42',  {'text-43': true, 'text-44': false}, ['text-45', {'text-46': true, 'text-47': false}, ['text-48']]]`
+            }
+        ]
+    }
+
+    function createRenderer(options) {
+        const {createElement, setElementText, insert, patchProps} = options
+
+        function mountElement(vnode, container) {
+            const el = createElement(vnode.type)
+            if (typeof vnode.children === 'string') {
+                setElementText(el, vnode.children)
+            } else if (Array.isArray(vnode.children)) {
+                vnode.children.forEach(child => {
+                    patch(null, child, el)
+                })
+            }
+
+            if (vnode.props) {
+                for (const key in vnode.props) {
+                    const value = vnode.props[key]
+                    patchProps(el, key, null, value)
+                }
+            }
+
+            insert(el, container)
+        }
+
+        function patch(n1, n2, container) {
+            if (!n1) {
+                mountElement(n2, container)
+            } else {
+                // Todo: 打补丁
+            }
+        }
+
+        function render(vnode, container) {
+            if (vnode) {
+                patch(container._vnode, vnode, container)
+            } else {
+                if (container._vnode) {
+                    container.innerHTML = ''
+                }
+            }
+            container._vnode = vnode
+        }
+
+        return {
+            render
+        }
+    }
+
+    function shouldSetAsProps(el, key) {
+        if (el.tagName === 'INPUT' && key === 'form') return false
+        return key in el
+    }
+
+    /**
+     * 将不同类型的 class 值正常化为字符串
+     */
+    function normalizeClass(value, classNames = []) {
+        const type = Array.isArray(value) ? 'array' : typeof value
+        switch (type) {
+            case 'string':
+                classNames.push(value)
+                break
+            case 'object':
+                Object.entries(value).forEach(([key, val]) => {
+                    val && classNames.push(key)
+                })
+                break
+            case 'array':
+                value.forEach(_ => normalizeClass(_, classNames))
+                break
+        }
+        return classNames.join(' ')
+    }
+
+    const renderer = createRenderer(options)
+    renderer.render(vnode, document.querySelector('#app'))
+
+</script>
+</html>

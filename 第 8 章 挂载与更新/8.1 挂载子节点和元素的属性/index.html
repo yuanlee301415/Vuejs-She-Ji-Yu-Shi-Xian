@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>8.1 挂载子节点和元素的属性</title>
+</head>
+<body>
+<div id="app"></div>
+</body>
+<script>
+    /**
+     * **************************************
+     * 挂载子节点和元素的属性
+     * **************************************
+     */
+
+    const options = {
+        createElement(tag) {
+            return document.createElement(tag)
+        },
+        setElementText(el, text) {
+            el.textContent = text
+        },
+        insert(el, parent) {
+            parent.appendChild(el)
+        }
+    }
+
+    /**
+     * @type {VNode}
+     */
+    const vnode = {
+        type: 'div',
+
+        /**
+         * 元素属性
+         */
+        props: {
+            id: 'foo'
+        },
+
+        /**
+         * 子节点
+         */
+        children: [
+            {
+                type: 'p',
+                children: 'Hello'
+            }
+        ]
+    }
+
+    function createRenderer(options) {
+        const {createElement, setElementText, insert} = options
+
+        function mountElement(vnode, container) {
+            const el = createElement(vnode.type)
+            if (typeof vnode.children === 'string') {
+                setElementText(el, vnode.children)
+            } else if (Array.isArray(vnode.children)) {
+                /**
+                 * 如果子节点是列表，则遍历更新
+                 */
+                vnode.children.forEach(child => {
+                    patch(null, child, el)
+                })
+            }
+
+            /**
+             * 设置元素的属性
+             */
+            if (vnode.props) {
+                for (const prop in vnode.props) {
+                    el[prop] = vnode.props[prop]
+                }
+            }
+
+            insert(el, container)
+        }
+
+        function patch(n1, n2, container) {
+            if (!n1) {
+                mountElement(n2, container)
+            } else {
+                // Todo: 打补丁
+            }
+        }
+
+        function render(vnode, container) {
+            if (vnode) {
+                patch(container._vnode, vnode, container)
+            } else {
+                if (container._vnode) {
+                    container.innerHTML = ''
+                }
+            }
+            container._vnode = vnode
+        }
+
+        return {
+            render
+        }
+    }
+
+    const renderer = createRenderer(options)
+    renderer.render(vnode, document.querySelector('#app'))
+
+</script>
+</html>

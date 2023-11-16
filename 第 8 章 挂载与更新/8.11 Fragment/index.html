@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>8.11 Fragment</title>
+</head>
+<body>
+<button onclick="update()">单击按钮，逐步更新</button>
+<div id="app"></div>
+</body>
+
+<script>
+    /**
+     * **************************************
+     * Fragment
+     * **************************************
+     */
+
+    const options = {
+        createElement(tag) {
+            return document.createElement(tag)
+        },
+
+        setElementText(el, text) {
+            el.textContent = text
+        },
+        insert(el, parent, anchor) {
+            parent.insertBefore(el, anchor)
+        },
+        createText(text) {
+            return document.createTextNode(text)
+        },
+        setText(el, text) {
+            el.nodeValue = text
+        },
+        patchProps(el, key, prevValue, nextValue) {
+            if (/^on/.test(key)) {
+                const name = key.slice(2).toLowerCase()
+                const invokers = el._vei || (el._vei = {})
+                let invoker = invokers[key]
+                if (nextValue) {
+                    if (!invoker) {
+                        invoker = el._vei[key] = e => {
+                            if (e.timeStamp < invoker.attached) return
+                            if (Array.isArray(invoker.value)) {
+                                invoker.value.forEach(fn => {
+                                    fn(e)
+                                })
+                            } else {
+                                invoker.value(e)
+                            }
+                        }
+                        invoker.value = nextValue
+                        invoker.attached = performance.now()
+
+                        el.addEventListener(name, invoker)
+                    } else {
+                        invoker.value = nextValue
+                    }
+                } else if (invoker) {
+                    el.removeEventListener(name, invoker)
+                }
+            } else if (key === 'class') {
+                el.className = normalizeClass(nextValue)
+            } else if (shouldSetAsProps(el, key, nextValue)) {
+                if (typeof el[key] === 'boolean' && nextValue === '') {
+                    el[key] = true
+                } else {
+                    el[key] = nextValue
+                }
+            } else {
+                el.setAttribute(key, nextValue)
+            }
+        }
+    }
+
+    const Text = Symbol('TextVNode')
+    const Comment = Symbol('CommentVNode')
+
+    /**
+     * 片段类型节点的 type 标识
+     */
+    const Fragment = Symbol('FragmentVNode')
+
+    /**
+     * 初始-文本子节点
+     */
+    const vnode = { type: 'ul', children: '初始-文本节点'}
+
+    function createRenderer(options) {
+        const {createElement, setElementText, insert, patchProps, createText, setText} = options
+
+        function mountElement(vnode, container) {
+            const el = createElement(vnode.type)
+            vnode.el = el
+
+            if (typeof vnode.children === 'string') {
+                setElementText(el, vnode.children)
+            } else if (Array.isArray(vnode.children)) {
+                vnode.children.forEach(child => {
+                    patch(null, child, el)
+                })
+            }
+
+            if (vnode.props) {
+                for (const key in vnode.props) {
+                    const value = vnode.props[key]
+                    patchProps(el, key, null, value)
+                }
+            }
+
+            insert(el, container)
+        }
+
+        function unmount(vnode) {
+            console.log('unmount>vnode:', vnode)
+            /**
+             * 如果 vnode 类型是 Fragment，则需要卸载其子节点
+             */
+            if (vnode.type === Fragment) {
+                vnode.children.forEach(child => unmount(child))
+                return
+            }
+            const parent = vnode.el.parentNode
+            parent && parent.removeChild(vnode.el)
+        }
+
+        function patchElement(n1, n2) {
+            const el = n2.el = n1.el
+            const oldProps = n1.props
+            const newProps = n2.props
+            for (const key in newProps) {
+                if (newProps[key] !== oldProps[key]) {
+                    patchProps(el, key, oldProps[key], newProps[key])
+                }
+            }
+
+            for (const key in oldProps) {
+                if (!(key in newProps)) {
+                    patchProps(el, key, oldProps[key], null)
+                }
+            }
+
+            patchChildren(n1, n2, el)
+        }
+
+        function patchChildren(n1, n2, container) {
+            if (typeof n2.children === 'string') {
+                if (Array.isArray(n1.children)) {
+                    n1.children.forEach(child => unmount(child))
+                }
+                setElementText(container, n2.children)
+            } else if (Array.isArray(n2.children)) {
+                if (Array.isArray(n1.children)) {
+                    n1.children.forEach(child => unmount(child))
+                    n2.children.forEach(child => patch(null, child, container))
+                } else {
+                    setElementText(container, '')
+                    n2.children.forEach(child => patch(null, child, container))
+                }
+            } else {
+                if (Array.isArray(n1.children)) {
+                    n1.children.forEach(child => unmount(child))
+                } else if (typeof n1.children === 'string') {
+                    setElementText(container, '')
+                }
+            }
+        }
+
+        function patch(n1, n2, container) {
+            if (n1 && n1.type !== n2.type) {
+                unmount(n1)
+                n1 = null
+            }
+
+            const {type} = n2
+            if (typeof type === 'string') {
+                if (!n1) {
+                    mountElement(n2, container)
+                } else {
+                    patchElement(n1, n2)
+                }
+            } else if (type === Text) {
+                if (!n1) {
+                    const el = n2.el = createText(n2.children)
+                    insert(el, container)
+                } else {
+                    const el = n2.el = n1.el
+                    if (n2.children !== n1.children) {
+                        setText(el, n2.children)
+                    }
+                }
+            } else if (type === Comment) {
+                if (!n1) {
+                    const el = n2.el = document.createComment(n2.children)
+                    insert(el, container)
+                } else {
+                    const el = n2.el = n1.el
+                    if (n2.children !== n1.children) {
+                        setText(el, n2.children)
+                    }
+                }
+            }
+
+            /**
+             * 片段类型节点
+             */
+            else if (type === Fragment) {
+                if (!n1) {
+                    /**
+                     * 如果旧 vnode 不存在，则只需要将 Fragment 的 children 逐个挂载
+                     */
+                    n2.children.forEach(child => patch(null, child, container))
+                } else {
+                    /**
+                     * 如果旧 vnode 存在，则只需要更新 Fragment 的 children 即可
+                     */
+                    patchChildren(n1, n2, container)
+                }
+            }
+
+            else if (typeof type === 'object') {
+                // 组件
+            } else {
+                // 其它类型
+            }
+        }
+
+        function render(vnode, container) {
+            if (vnode) {
+                patch(container._vnode, vnode, container)
+            } else {
+                container._vnode && unmount(container._vnode)
+            }
+            container._vnode = vnode
+        }
+
+        return {
+            render
+        }
+    }
+
+    function shouldSetAsProps(el, key) {
+        if (el.tagName === 'INPUT' && key === 'form') return false
+        return key in el
+    }
+
+    function normalizeClass(value, classNames = []) {
+        const type = Array.isArray(value) ? 'array' : typeof value
+        switch (type) {
+            case 'string':
+                classNames.push(value)
+                break
+            case 'object':
+                Object.entries(value).forEach(([key, val]) => {
+                    val && classNames.push(key)
+                })
+                break
+            case 'array':
+                value.forEach(_ => normalizeClass(_, classNames))
+                break
+        }
+        return classNames.join(' ')
+    }
+
+
+    const renderer = createRenderer(options)
+    const container = document.querySelector('#app')
+    renderer.render(vnode, container)
+
+    const vnodes = [
+        {
+            ...vnode,
+            children: [
+                /**
+                 * 片段类型节点
+                 */
+                {
+                    type: Fragment,
+                    children: [{type: 'p', children: '片段-1'}, {type: 'p', children: '片段-2'}, {type: 'p', children: '片段-3'}]
+                }
+            ]
+        },
+
+        {
+            ...vnode,
+            /**
+             * 卸载上一步的片段类型节点
+             */
+            children: null
+        }
+    ]
+
+    function update() {
+        const vnode = vnodes.shift()
+        console.log('update>vnode:', vnode)
+        vnode && renderer.render(vnode, container)
+    }
+
+</script>
+</html>

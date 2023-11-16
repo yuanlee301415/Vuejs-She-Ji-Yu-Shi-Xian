@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>8.7-3 事件的处理</title>
+</head>
+<body>
+<div id="app"></div>
+</body>
+
+<script>
+    /**
+     * **************************************
+     * 事件的处理
+     *
+     * 同一个元素绑定同一种类型的多个事件
+     * **************************************
+     */
+
+    const options = {
+        createElement(tag) {
+            return document.createElement(tag)
+        },
+
+        setElementText(el, text) {
+            el.textContent = text
+        },
+        insert(el, parent, anchor) {
+            parent.insertBefore(el, anchor)
+        },
+        patchProps(el, key, prevValue, nextValue) {
+            if (/^on/.test(key)) {
+                const name = key.slice(2).toLowerCase()
+                const invokers = el._vei || (el._vei = {})
+                let invoker = invokers[key]
+                if (nextValue) {
+                    if (!invoker) {
+                        invoker = el._vei[key] = e => {
+                            /**
+                             * 如果 invoker.value 是数组，则遍历调用
+                             */
+                            if (Array.isArray(invoker.value)) {
+                                invoker.value.forEach(fn => {
+                                    fn(e)
+                                })
+                            } else {
+                                /**
+                                 * 否则直接调用
+                                 */
+                                invoker.value(e)
+                            }
+                        }
+                        invoker.value = nextValue
+                        el.addEventListener(name, invoker)
+                    } else {
+                        invoker.value = nextValue
+                    }
+                } else if (invoker) {
+                    el.removeEventListener(name, invoker)
+                }
+            } else if (key === 'class') {
+                el.className = normalizeClass(nextValue)
+            } else if (shouldSetAsProps(el, key, nextValue)) {
+                if (typeof el[key] === 'boolean' && nextValue === '') {
+                    el[key] = true
+                } else {
+                    el[key] = nextValue
+                }
+            } else {
+                el.setAttribute(key, nextValue)
+            }
+        }
+    }
+
+    const vnode = {
+        type: 'button',
+        children: 'Mouseover me.',
+        props: {
+            onmouseenter(e) {
+                console.log('onmouseenter>event:', e)
+            },
+            onmouseleave(e) {
+                console.log('onmouseleave>event:', e)
+            },
+
+            onclick: [
+                /**
+                 * click 事件 1
+                 */
+                    e => {
+                    console.log('Clicked 1.', e)
+                },
+
+                /**
+                 * click 事件 2
+                 */
+                    e => {
+                    console.log('Clicked 2.', e)
+                }
+            ]
+        }
+    }
+
+    function createRenderer(options) {
+        const {createElement, setElementText, insert, patchProps} = options
+
+        function mountElement(vnode, container) {
+            const el = createElement(vnode.type)
+            vnode.el = el
+
+            if (typeof vnode.children === 'string') {
+                setElementText(el, vnode.children)
+            } else if (Array.isArray(vnode.children)) {
+                vnode.children.forEach(child => {
+                    patch(null, child, el)
+                })
+            }
+
+            if (vnode.props) {
+                for (const key in vnode.props) {
+                    const value = vnode.props[key]
+                    patchProps(el, key, null, value)
+                }
+            }
+
+            insert(el, container)
+        }
+
+        function unmount(vnode) {
+            const parent = vnode.el.parentNode
+            parent && parent.removeChild(vnode.el)
+        }
+
+        function patch(n1, n2, container) {
+            if (n1 && n1.type !== n2.type) {
+                unmount(n1)
+                n1 = null
+            }
+
+            const {type} = n2
+            if (typeof type === 'string') {
+                if (!n1) {
+                    mountElement(n2, container)
+                } else {
+                    // 更新
+                }
+            } else if (typeof type === 'object') {
+                // 组件
+            } else {
+                // 其它类型
+            }
+        }
+
+        function render(vnode, container) {
+            if (vnode) {
+                patch(container._vnode, vnode, container)
+            } else {
+                container._vnode && unmount(container._vnode)
+            }
+            container._vnode = vnode
+        }
+
+        return {
+            render
+        }
+    }
+
+    function shouldSetAsProps(el, key) {
+        if (el.tagName === 'INPUT' && key === 'form') return false
+        return key in el
+    }
+
+    function normalizeClass(value, classNames = []) {
+        const type = Array.isArray(value) ? 'array' : typeof value
+        switch (type) {
+            case 'string':
+                classNames.push(value)
+                break
+            case 'object':
+                Object.entries(value).forEach(([key, val]) => {
+                    val && classNames.push(key)
+                })
+                break
+            case 'array':
+                value.forEach(_ => normalizeClass(_, classNames))
+                break
+        }
+        return classNames.join(' ')
+    }
+
+
+    const renderer = createRenderer(options)
+    const container = document.querySelector('#app')
+    renderer.render(vnode, container)
+
+
+</script>
+</html>

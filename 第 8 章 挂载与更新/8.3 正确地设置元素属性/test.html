@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>8.3-test 正确地设置元素属性</title>
+</head>
+<body>
+<h1>Disabled</h1>
+<h3>使用 setAttribute 函数设置的值总是会被字符串化</h3>
+<button id="e1">setAttribute('disabled', false)</button>
+<script>
+    /**
+     * 使用 setAttribute 函数设置的值总是会被字符串化，
+     * 所以下面这句代码等价于：setAttribute('disabled', 'false')
+     */
+    document.querySelector('#e1').setAttribute('disabled', false) // 按钮被禁用
+</script>
+
+<h3>`disabled` 属性等于空字符串，按钮被禁用</h3>
+<button id="e2" disabled="">disabled=""</button>
+
+<hr>
+
+<h1>`form` 属性只读</h1>
+<form id="form1"></form>
+<form id="form2"></form>
+<input type="text" form="form1" id="e3">
+<script>
+    document.querySelector('#e3').form = 'form2'
+    console.log('form:', document.querySelector('#e3').form) // form1
+    document.querySelector('#e3').setAttribute('form', 'form2')
+    console.log('form:', document.querySelector('#e3').form) // form1
+</script>
+</body>
+<script>
+
+</script>
+</html>

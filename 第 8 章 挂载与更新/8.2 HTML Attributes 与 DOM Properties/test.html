@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>8.2 HTML Attributes 与 DOM Properties</title>
+</head>
+<body>
+<h1>
+    HTML Attributes 与 DOM Properties 之间的关系
+    很复杂，但其实我们只需要记住一个核心原则即可：HTML Attributes
+    的作用是设置与之对应的 DOM Properties 的初始值。
+</h1>
+<div id="e1" class="foo"></div>
+<script>
+    console.log('className:', document.querySelector('#e1').className)
+</script>
+
+<hr>
+
+<h1>当前值 与 原始值</h1>
+<input type="text" value="foo" id="e2">
+<script>
+    document.querySelector('#e2').value = 'bar' // 模拟用户输入了内容：bar
+    console.log('当前值:', document.querySelector('#e2').value) // bar
+    console.log('原始值:', document.querySelector('#e2').defaultValue) // foo
+    console.log('原始值:', document.querySelector('#e2').getAttribute('value')) // foo
+</script>
+
+<hr>
+<h1>浏览器会矫正不合法的 type 值</h1>
+<input type="xx" id="e3">
+<script>
+    console.log('type 值:', document.querySelector('#e3').type) // text
+</script>
+</body>
+<script>
+
+</script>
+</html>
