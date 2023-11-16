@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>4.6-避免无限递归循环</title>
+</head>
+<body>
+
+</body>
+<script>
+    /**
+     * **************************************
+     * 避免无限递归循环
+     * **************************************
+     */
+
+    let activeEffect
+    const effectStack = []
+    const bucket = new WeakMap()
+    const data = {foo: 1}
+    const obj = new Proxy(data, {
+        get(target, key) {
+            track(target, key)
+            return target[key]
+        },
+        set(target, key, value) {
+            target[key] = value
+            trigger(target, key)
+            return true
+        }
+    })
+
+    function effect(fn) {
+        const effectFn = (key) => {
+            cleanup(effectFn)
+            activeEffect = effectFn
+            effectStack.push(effectFn)
+            fn(key)
+            effectStack.pop()
+
+            activeEffect = effectStack[effectStack.length - 1]
+        }
+        effectFn.deps = []
+        effectFn()
+    }
+
+    function cleanup(effectFn) {
+        for (let i = 0; i < effectFn.deps.length; i++) {
+            const deps = effectFn.deps[i]
+            deps.delete(effectFn)
+        }
+        effectFn.deps.length = 0
+    }
+
+    function track(target, key) {
+        if (!activeEffect) return
+        let depsMap = bucket.get(target)
+        if (!depsMap) {
+            depsMap = new Map()
+            bucket.set(target, depsMap)
+        }
+        let deps = depsMap.get(key)
+        if (!deps) {
+            deps = new Set()
+            depsMap.set(key, deps)
+        }
+        deps.add(activeEffect)
+        activeEffect.deps.push(deps)
+        console.log(`收集副作用函数：`, key)
+    }
+
+    function trigger(target, key) {
+        const depsMap = bucket.get(target)
+        if (!depsMap) return
+        const effects = depsMap.get(key)
+        const effectsToRun = new Set(effects)
+        effectsToRun.forEach(fn => fn(key))
+        console.log(`触发更新：`, key)
+    }
+
+    effect(function effectFn(key) {
+        console.log('effectFn run:', key)
+        console.log('foo:', obj.foo)
+
+        /**
+         * **************************************
+         * 问题：
+         * 在副作用函数中设置值，导致无限循环
+         * **************************************
+         */
+        obj.foo++
+        // obj.foo = obj.foo + 1
+    })
+    console.log(bucket)
+
+    setTimeout(() => {
+        obj.foo = false
+    }, 500)
+
+</script>
+</html>

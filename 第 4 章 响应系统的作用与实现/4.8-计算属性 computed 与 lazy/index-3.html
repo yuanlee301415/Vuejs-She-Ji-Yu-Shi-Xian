@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>4.8-3-计算属性 computed 与 lazy</title>
+</head>
+<body>
+
+</body>
+<script>
+    /**
+     * **************************************
+     * 解决问题：修改计算属性依赖的数据，不会重新计算
+     * **************************************
+     */
+
+    /**
+     * **************************************
+     * computed 调用 effect 时，传入 scheduler 调度器，在调度器中将 dirty 重置 true
+     * **************************************
+     */
+
+    let activeEffect
+    const effectStack = []
+    const bucket = new WeakMap()
+    const data = {foo: 1, bar: 2}
+    const obj = new Proxy(data, {
+        get(target, key) {
+            track(target, key)
+            return target[key]
+        },
+        set(target, key, value) {
+            target[key] = value
+            trigger(target, key)
+            return true
+        }
+    })
+
+    function track(target, key) {
+        if (!activeEffect) return
+        let depsMap = bucket.get(target)
+        if (!depsMap) {
+            depsMap = new Map()
+            bucket.set(target, depsMap)
+        }
+        let deps = depsMap.get(key)
+        if (!deps) {
+            deps = new Set()
+            depsMap.set(key, deps)
+        }
+        deps.add(activeEffect)
+        activeEffect.deps.push(deps)
+        console.log(`收集副作用函数：`, key)
+    }
+
+    function trigger(target, key) {
+        const depsMap = bucket.get(target)
+        if (!depsMap) return
+        const effects = depsMap.get(key)
+        const effectsToRun = new Set()
+        effects && effects.forEach(effectFn => {
+            if (effectFn !== activeEffect) {
+                effectsToRun.add(effectFn)
+            }
+        })
+        effectsToRun.forEach(effectFn => {
+            if (effectFn.options.scheduler) {
+                effectFn.options.scheduler(() => effectFn(key))
+            } else {
+                effectFn(key)
+            }
+        })
+        console.log(`触发更新：`, key)
+    }
+
+    function cleanup(effectFn) {
+        for (let i = 0; i < effectFn.deps.length; i++) {
+            const deps = effectFn.deps[i]
+            deps.delete(effectFn)
+        }
+        effectFn.deps.length = 0
+    }
+
+    function effect(fn, options = {}) {
+        const effectFn = (key) => {
+            cleanup(effectFn)
+            activeEffect = effectFn
+            effectStack.push(effectFn)
+            const res = fn(key)
+            effectStack.pop()
+            activeEffect = effectStack[effectStack.length - 1]
+            return res
+        }
+        effectFn.options = options
+        effectFn.deps = []
+        if (options.lazy) {
+            return effectFn
+        }
+
+        effectFn()
+    }
+
+    function computed(getter) {
+        let value
+        let dirty = true
+
+        const effectFn = effect(getter, {
+            lazy: true,
+            /**
+             * 添加调度器，在调度器中将 dirty 重置 true
+             */
+            scheduler() {
+                dirty = true
+            }
+        })
+
+        return {
+            get value() {
+                if (dirty) {
+                    value = effectFn()
+                    dirty = false
+                }
+                return value
+            }
+        }
+    }
+
+    console.log(bucket)
+
+    const sumRes = computed(() => obj.foo + obj.bar)
+
+    console.log('sumRes>value:', sumRes.value)
+    console.log('sumRes>value:', sumRes.value)
+
+    obj.foo++
+    console.log('obj.foo++>sumRes>value:', sumRes.value)
+
+    /**
+     * **************************************
+     * 问题：修改计算属性依赖的数据，effect 副作用函数不会重新执行
+     * **************************************
+     */
+    effect(() => {
+        console.warn('effect>sumRes>value:', sumRes.value)
+    })
+    obj.foo++
+
+</script>
+</html>

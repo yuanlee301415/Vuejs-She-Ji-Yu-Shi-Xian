@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>4.3 设计一个完善的响应系统</title>
+</head>
+<body>
+
+</body>
+<script>
+    /**
+     * **************************************
+     * 设计一个完善的响应系统
+     * **************************************
+     */
+
+    const bucket = new Set()
+    const data = {text: 'Hello world'}
+    const obj = new Proxy(data, {
+        get(target, key) {
+            bucket.add(effect)
+            return target[key]
+        },
+        set(target, key, value) {
+            target[key] = value
+            bucket.forEach(fn => fn(key))
+            return true
+        }
+    })
+
+    function effect() {
+        document.body.innerText = obj.text
+    }
+
+    effect()
+
+    /**
+     * **************************************
+     * 问题：
+     * 设置不存在的代理数据的属性(`notExist`)时，也会运行之前已经收集的副作用函数
+     * **************************************
+     */
+    setTimeout(() => {
+        obj.notExist = 'Hello Vue3'
+    }, 300)
+
+</script>
+</html>

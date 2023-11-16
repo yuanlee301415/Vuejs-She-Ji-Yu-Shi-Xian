@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>4.7-调度执行-2</title>
+</head>
+<body>
+
+</body>
+<script>
+    /**
+     * **************************************
+     * 解决问题：
+     * 如何支持调度，以调整输出顺序为：1，结束了，2
+     * **************************************
+     */
+
+    /**
+     * **************************************
+     * effect 增加 `options.scheduler` 选项，用以指定调度器，并在 trigger 函数中触发副作用函数时，执行调度器，从而把控制权交给用户
+     * **************************************
+     */
+
+    let activeEffect
+    const effectStack = []
+    const bucket = new WeakMap()
+    const data = {foo: 1}
+    const obj = new Proxy(data, {
+        get(target, key) {
+            track(target, key)
+            return target[key]
+        },
+        set(target, key, value) {
+            target[key] = value
+            trigger(target, key)
+            return true
+        }
+    })
+
+    function track(target, key) {
+        if (!activeEffect) return
+        let depsMap = bucket.get(target)
+        if (!depsMap) {
+            depsMap = new Map()
+            bucket.set(target, depsMap)
+        }
+        let deps = depsMap.get(key)
+        if (!deps) {
+            deps = new Set()
+            depsMap.set(key, deps)
+        }
+        deps.add(activeEffect)
+        activeEffect.deps.push(deps)
+    }
+
+    function trigger(target, key) {
+        const depsMap = bucket.get(target)
+        if (!depsMap) return
+        const effects = depsMap.get(key)
+        const effectsToRun = new Set()
+        effects && effects.forEach(effectFn => {
+            if (effectFn !== activeEffect) {
+                effectsToRun.add(effectFn)
+            }
+        })
+        effectsToRun.forEach(effectFn => {
+            if (effectFn.options.scheduler) {
+                /**
+                 * 如果一个副作用函数存在调度器，则调用该调度器，并将副作用函数作为参数传入
+                 */
+                effectFn.options.scheduler(() => effectFn(key))
+            } else {
+                /**
+                 * 否则直接执行副作用函数（之前的默认行为）
+                 */
+                effectFn(key)
+            }
+        })
+    }
+
+    function cleanup(effectFn) {
+        for (let i = 0; i < effectFn.deps.length; i++) {
+            const deps = effectFn.deps[i]
+            deps.delete(effectFn)
+        }
+        effectFn.deps.length = 0
+    }
+
+    /**
+     * @param fn
+     * @param {object} [options] - 选项
+     * @param {{(fn: Function): void}} options.scheduler - 调度器
+     */
+    function effect(fn, options = {}) {
+        const effectFn = (key) => {
+            cleanup(effectFn)
+            activeEffect = effectFn
+            effectStack.push(effectFn)
+            fn(key)
+            effectStack.pop()
+            activeEffect = effectStack[effectStack.length - 1]
+        }
+
+        /**
+         * 将 options 挂载到 effectFn 上
+         */
+        effectFn.options = options
+        effectFn.deps = []
+        effectFn()
+    }
+
+
+    effect(function effectFn(key) {
+        console.log('effectFn run:', key)
+        console.log('foo:', obj.foo)
+    }, {
+        scheduler(fn) {
+            setTimeout(fn)
+        }
+    })
+
+    console.log(bucket)
+
+    obj.foo++
+    console.warn('结束了')
+
+</script>
+</html>

@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>4.9-3 watch 的实现原理</title>
+</head>
+<body>
+
+</body>
+<script>
+    /**
+     * **************************************
+     * 解决问题：
+     * 如何获得监听目标的新值和旧值
+     * **************************************
+     */
+
+    /**
+     * 利用 effect 函数的 lazy 选项开启延时执行副作用函数
+     * 指定 effect 函数的 scheduler 调度器，在调度器获取监听目标的新值和旧值，并作为参数传监听器的回调函数
+     */
+    let activeEffect
+    const effectStack = []
+    const bucket = new WeakMap()
+    const data = {foo: 1, bar: 2}
+    const obj = new Proxy(data, {
+        get(target, key) {
+            track(target, key)
+            return target[key]
+        },
+        set(target, key, value) {
+            target[key] = value
+            trigger(target, key)
+            return true
+        }
+    })
+
+    function track(target, key) {
+        if (!activeEffect) return
+        let depsMap = bucket.get(target)
+        if (!depsMap) {
+            depsMap = new Map()
+            bucket.set(target, depsMap)
+        }
+        let deps = depsMap.get(key)
+        if (!deps) {
+            deps = new Set()
+            depsMap.set(key, deps)
+        }
+        deps.add(activeEffect)
+        activeEffect.deps.push(deps)
+        console.log(`收集副作用函数：`, key)
+    }
+
+    function trigger(target, key) {
+        const depsMap = bucket.get(target)
+        if (!depsMap) return
+        const effects = depsMap.get(key)
+        const effectsToRun = new Set()
+        effects && effects.forEach(effectFn => {
+            if (effectFn !== activeEffect) {
+                effectsToRun.add(effectFn)
+            }
+        })
+        effectsToRun.forEach(effectFn => {
+            if (effectFn.options.scheduler) {
+                effectFn.options.scheduler(() => effectFn(key))
+            } else {
+                effectFn(key)
+            }
+        })
+        console.log(`触发更新：`, key)
+    }
+
+    function cleanup(effectFn) {
+        for (let i = 0; i < effectFn.deps.length; i++) {
+            const deps = effectFn.deps[i]
+            deps.delete(effectFn)
+        }
+        effectFn.deps.length = 0
+    }
+
+    function effect(fn, options = {}) {
+        const effectFn = (key) => {
+            cleanup(effectFn)
+            activeEffect = effectFn
+            effectStack.push(effectFn)
+            const res = fn(key)
+            effectStack.pop()
+            activeEffect = effectStack[effectStack.length - 1]
+            return res
+        }
+        effectFn.options = options
+        effectFn.deps = []
+        if (options.lazy) {
+            return effectFn
+        }
+
+        effectFn()
+    }
+
+
+    function traverse(value, seen = new Set()) {
+        if (typeof value !== 'object' || value === null || seen.has(value)) return
+        seen.add(value)
+        for (const key in value) {
+            traverse(value[key], seen)
+        }
+        return value
+    }
+
+    function watch(source, cb) {
+        let getter
+        if (typeof source === 'function') {
+            getter = source
+        } else {
+            getter = () => traverse(source)
+        }
+
+        /**
+         * 定义旧值与新值
+         */
+        let oldValue, newValue
+
+        const effectFn = effect(() => getter(), {
+            /**
+             * 开启 lazy 选项
+             */
+            lazy: true,
+
+            scheduler() {
+                /**
+                 * 在 scheduler 中重新执行副作用函数，得到新值
+                 */
+                newValue = effectFn()
+
+                /**
+                 * 将新值和旧值传给监听器的回调函数
+                 */
+                cb(newValue, oldValue)
+                oldValue = newValue
+            }
+        })
+
+        /**
+         * 手动调用副作用函数，得到旧值
+         */
+        oldValue = effectFn()
+    }
+
+    console.log(bucket)
+
+    watch(() => obj.foo, (newValue, oldValue) => {
+        console.log('foo 新值和旧值:', {newValue, oldValue})
+    })
+    obj.foo++
+    obj.foo++
+
+</script>
+</html>

@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>4.3 设计一个完善的响应系统-2</title>
+</head>
+<body>
+
+</body>
+<script>
+    /**
+     * **************************************
+     * 解决问题：设置不存在的代理对象的属性时，也会运行之前已经收集的副作用函数
+     * **************************************
+     */
+
+    /**
+     * **************************************
+     * 增加：activeEffect
+     * 增加： bucket
+     * 增加：track
+     * 增加：trigger
+     * **************************************
+     */
+
+    /**
+     * 当前副作用函数
+     * @type {Function}
+     */
+    let activeEffect
+
+    /**
+     * 收集的副作用函数
+     * @type {Bucket}
+     */
+    const bucket = new WeakMap()
+
+    const data = {text: 'Hello world'}
+    const obj = new Proxy(data, {
+        get(target, key) {
+            track(target, key)
+            return target[key]
+        },
+        set(target, key, value) {
+            target[key] = value
+            trigger(target, key)
+            return true
+        }
+    })
+
+    /**
+     * 追踪变化
+     * 1.将被代理的整个数据作为 bucket 的 key，值为 map(=new Map())
+     * 2.将代理数据读取拦截到的属性名作为 map 的 key，值为 set(= new Set())
+     * 3.将收集到的副作用函数保存到 set
+     *
+     * @param {object} target - 代理对象
+     * @param {string} key - target 的属性名
+     */
+    function track(target, key) {
+        if (!activeEffect) return
+        let depsMap = bucket.get(target)
+        if (!depsMap) {
+            bucket.set(target, depsMap = new Map())
+        }
+        let effects = depsMap.get(key)
+        if (!effects) {
+            depsMap.set(key, effects = new Set())
+        }
+        effects.add(activeEffect)
+        console.log(`收集副作用函数：`, key)
+    }
+
+    /**
+     * 触发更新
+     * @param {object} target - 代理对象
+     * @param {string} key - target 的属性名
+     */
+    function trigger(target, key) {
+        const depsMap = bucket.get(target)
+        if (!depsMap) return
+        const effects = depsMap.get(key)
+        effects && effects.forEach(fn => fn(key))
+        console.log(`触发更新：`, key)
+    }
+
+    /**
+     * 副作用函数
+     * @param {Function} fn - 副作用函数
+     */
+    function effect(fn) {
+        activeEffect = fn
+        fn()
+    }
+
+    effect(function effectFn(key) {
+        console.log('effect run:', key)
+        document.body.innerText = obj.text
+    })
+    console.log(bucket)
+
+    setTimeout(() => {
+        obj.text = 'Hello Vue3'
+    }, 500)
+
+</script>
+</html>

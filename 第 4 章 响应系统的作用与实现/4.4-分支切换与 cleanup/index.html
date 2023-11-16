@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>4.4 分支切换与 cleanup</title>
+</head>
+<body>
+
+</body>
+<script>
+    /**
+     * **************************************
+     * 分支切换与 cleanup
+     * **************************************
+     */
+
+    let activeEffect
+    const bucket = new WeakMap()
+    const data = {ok: true, text: 'Hello world'}
+    const obj = new Proxy(data, {
+        get(target, key) {
+            track(target, key)
+            return target[key]
+        },
+        set(target, key, value) {
+            target[key] = value
+            trigger(target, key)
+            return true
+        }
+    })
+
+    function track(target, key) {
+        if (!activeEffect) return
+        let depsMap = bucket.get(target)
+        if (!depsMap) {
+            bucket.set(target, depsMap = new Map())
+        }
+        let effects = depsMap.get(key)
+        if (!effects) {
+            depsMap.set(key, effects = new Set())
+        }
+        effects.add(activeEffect)
+        console.log(`收集副作用函数：`, key)
+    }
+
+    function trigger(target, key) {
+        const depsMap = bucket.get(target)
+        if (!depsMap) return
+        const effects = depsMap.get(key)
+        effects && effects.forEach(fn => fn(key))
+        console.log(`触发更新：`, key)
+    }
+
+    function effect(fn) {
+        activeEffect = fn
+        fn()
+    }
+
+    effect(function effectFn(key) {
+        console.log('effect run:', key)
+
+        /**
+         * 分支切换
+         */
+        document.body.innerText = obj.ok ? obj.text : 'Not'
+    })
+    console.log(bucket)
+
+    /**
+     * **************************************
+     * 问题：
+     * obj.ok 的值修改为 false 后，副作用函数 effectFn 不再依赖 obj.text
+     * 但 obj.text 的副作用函数依然保存 bucket 中，修改 obj.text 值， effectFn 会执行
+     * **************************************
+     */
+    obj.ok = false
+
+    setTimeout(() => {
+        console.warn(new Date())
+        obj.text = 'Hello Vue3'
+    }, 500)
+
+</script>
+</html>

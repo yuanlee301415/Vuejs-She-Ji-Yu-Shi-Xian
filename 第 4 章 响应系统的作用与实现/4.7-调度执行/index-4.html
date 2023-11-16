@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>4.7-调度执行-4</title>
+</head>
+<body>
+
+</body>
+<script>
+    /**
+     * **************************************
+     * 解决问题：
+     * 忽略中间过滤状态（不输出 `foo` 的中间值：2 和 3），而只输出最终结果 100
+     * **************************************
+     */
+
+    /**
+     * **************************************
+     * 增加：任务队列
+     * 增加：微任务
+     * 增加：刷新队列
+     * **************************************
+     */
+
+    let activeEffect
+    const effectStack = []
+    const bucket = new WeakMap()
+    const data = {foo: 1, bar: 1}
+    const obj = new Proxy(data, {
+        get(target, key) {
+            track(target, key)
+            return target[key]
+        },
+        set(target, key, value) {
+            target[key] = value
+            trigger(target, key)
+            return true
+        }
+    })
+
+    function track(target, key) {
+        if (!activeEffect) return
+        let depsMap = bucket.get(target)
+        if (!depsMap) {
+            depsMap = new Map()
+            bucket.set(target, depsMap)
+        }
+        let deps = depsMap.get(key)
+        if (!deps) {
+            deps = new Set()
+            depsMap.set(key, deps)
+        }
+        deps.add(activeEffect)
+        activeEffect.deps.push(deps)
+        console.log(`收集副作用函数：`, key)
+    }
+
+    function trigger(target, key) {
+        const depsMap = bucket.get(target)
+        if (!depsMap) return
+        const effects = depsMap.get(key)
+        const effectsToRun = new Set()
+        effects && effects.forEach(effectFn => {
+            if (effectFn !== activeEffect) {
+                effectsToRun.add(effectFn)
+            }
+        })
+        effectsToRun.forEach(effectFn => {
+            if (effectFn.options.scheduler) {
+                effectFn.options.scheduler(() => effectFn(key))
+            } else {
+                effectFn(key)
+            }
+        })
+        console.log(`触发更新：`, key)
+    }
+
+    function cleanup(effectFn) {
+        for (let i = 0; i < effectFn.deps.length; i++) {
+            const deps = effectFn.deps[i]
+            deps.delete(effectFn)
+        }
+        effectFn.deps.length = 0
+    }
+
+    function effect(fn, options = {}) {
+        const effectFn = (key) => {
+            cleanup(effectFn)
+            activeEffect = effectFn
+            effectStack.push(effectFn)
+            fn(key)
+            effectStack.pop()
+            activeEffect = effectStack[effectStack.length - 1]
+        }
+        effectFn.options = options
+        effectFn.deps = []
+        effectFn()
+    }
+
+    /**
+     * 任务队列
+     * @type {Set<any>}
+     */
+    const jobQueue = new Set()
+
+    /**
+     * 微任务
+     * @type {Promise<void>}
+     */
+    const p = Promise.resolve()
+
+    /**
+     * 是否正在刷新队列
+     * @type {boolean}
+     */
+    let isFlushing = false
+
+    /**
+     * 刷新队列
+     */
+    function flushJob() {
+        if (isFlushing) return
+        isFlushing = true
+        p.then(() => {
+            console.log('jobQueue:', jobQueue)
+            jobQueue.forEach(fn => fn())
+        }).finally(() => {
+            isFlushing = false
+        })
+    }
+
+    effect(function effectFn(key) {
+        console.log('effectFn run:', key)
+        console.log('foo:', obj.foo)
+    }, {
+        scheduler(fn) {
+            /**
+             * 每次调度时，将副作用函数添加到 jobQueue 队列中
+             */
+            jobQueue.add(fn)
+
+            /**
+             * 执行：刷新队列
+             */
+            flushJob()
+        }
+    })
+    console.log(bucket)
+
+    obj.foo++
+    obj.foo++
+    obj.foo = 100
+    console.warn('结束了')
+
+</script>
+</html>

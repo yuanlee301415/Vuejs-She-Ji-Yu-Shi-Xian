@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>4.2 响应式数据的基本实现</title>
+</head>
+<body>
+
+</body>
+<script>
+    /**
+     * **************************************
+     * 使用 Proxy 代理数据
+     * 使用 effect 副作用函数代表更新界面
+     * 使用 bucket 收集副作用函数
+     * 读取代理数据的属性时，收集 effect
+     * 设置代理数据的属性时，运行 effect
+     * **************************************
+     */
+
+    /**
+     * 收集的副作用函数
+     */
+    const bucket = new Set()
+
+    /**
+     * 原始数据
+     */
+    const data = {text: 'Hello world'}
+
+    /**
+     * 代理对象
+     */
+    const obj = new Proxy(data, {
+        get(target, key) {
+            bucket.add(effect)
+            return target[key]
+        },
+        set(target, key, value) {
+            target[key] = value
+            bucket.forEach(fn => fn())
+            return true
+        }
+    })
+
+    /**
+     * 副作用函数
+     */
+    function effect() {
+        document.body.innerText = obj.text
+        console.log('effect run.')
+    }
+
+    effect()
+
+    setTimeout(() => {
+        obj.text = 'Hello Vue3'
+    }, 300)
+
+</script>
+</html>

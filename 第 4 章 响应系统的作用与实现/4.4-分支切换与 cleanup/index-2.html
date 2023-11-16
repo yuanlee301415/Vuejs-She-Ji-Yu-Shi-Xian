@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>4.4 分支切换与 cleanup-2</title>
+</head>
+<body>
+
+</body>
+<script>
+    /**
+     * **************************************
+     * 解决问题：
+     * obj.ok 的值修改为 false 后，副作用函数 effectFn 不再依赖 obj.text
+     * 但 obj.text 的副作用函数依然保存 bucket 中，修改 obj.text 值， effectFn 会执行
+     * **************************************
+     */
+
+    /**
+     * **************************************
+     * 重构 effect
+     * 运行 effect 时，先清除全部副作用函数，再重新运行 effect，收集副作用函数
+     * **************************************
+     */
+
+    let activeEffect
+    const bucket = new WeakMap()
+    const data = {ok: true, text: 'Hello world'}
+    const obj = new Proxy(data, {
+        get(target, key) {
+            track(target, key)
+            return target[key]
+        },
+        set(target, key, value) {
+            target[key] = value
+            trigger(target, key)
+            return true
+        }
+    })
+
+    function track(target, key) {
+        if (!activeEffect) return
+        let depsMap = bucket.get(target)
+        if (!depsMap) {
+            depsMap = new Map()
+            bucket.set(target, depsMap)
+        }
+        let deps = depsMap.get(key)
+        if (!deps) {
+            deps = new Set()
+            depsMap.set(key, deps)
+        }
+        deps.add(activeEffect)
+
+        /**
+         * 将当前副作用函数保存到其依赖数组中
+         */
+        activeEffect.deps.push(deps)
+
+        console.log(`收集副作用函数：`, key)
+    }
+
+    function trigger(target, key) {
+        const depsMap = bucket.get(target)
+        if (!depsMap) return
+        const effects = depsMap.get(key)
+
+        /**
+         * 生成副作用函数副本
+         * 避免由于运行副作用函数，执行到内部的 cleanup 逻辑而导致的死循环
+         * @type {Set<any>}
+         */
+        const effectsToRun = new Set(effects)
+
+        effectsToRun.forEach(fn => fn(key))
+        console.log(`触发更新：`, key)
+    }
+
+
+    /**
+     * 移除所有副作用函数
+     * @param {EffectFn} effectFn
+     */
+    function cleanup(effectFn) {
+        /**
+         * 遍历移除副作用函数
+         */
+        for (let i = 0; i < effectFn.deps.length; i++) {
+            const deps = effectFn.deps[i]
+            deps.delete(effectFn)
+        }
+        effectFn.deps.length = 0
+    }
+
+    function effect(fn) {
+        /**
+         * @type {EffectFn}
+         */
+        const effectFn = (key) => {
+            /**
+             * 清除所有副作用函数
+             */
+            cleanup(effectFn)
+
+            activeEffect = effectFn
+            fn(key)
+        }
+
+        /**
+         * 初始化一个空数据，用于保存收集到的副作用函数
+         */
+        effectFn.deps = []
+
+        /**
+         * 运行 effect，重新收集副作用函数
+         */
+        effectFn()
+    }
+
+    effect(function (key) {
+        console.log('effect run:', key)
+        document.body.innerText = obj.ok ? obj.text : 'Not'
+    })
+    console.log(bucket)
+
+    obj.ok = false
+
+    setTimeout(() => {
+        console.warn(new Date())
+        obj.text = 'Hello Vue3'
+    }, 500)
+
+</script>
+</html>

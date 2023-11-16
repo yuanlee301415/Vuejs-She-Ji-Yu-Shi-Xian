@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>4.5-嵌套的 effect 与 effect栈</title>
+</head>
+<body>
+
+</body>
+<script>
+    /**
+     * **************************************
+     * 嵌套的 effect 与 effect栈
+     * **************************************
+     */
+
+    let activeEffect
+    const bucket = new WeakMap()
+    const data = {foo: true, bar: true}
+    const obj = new Proxy(data, {
+        get(target, key) {
+            track(target, key)
+            return target[key]
+        },
+        set(target, key, value) {
+            target[key] = value
+            trigger(target, key)
+            return true
+        }
+    })
+
+    function track(target, key) {
+        if (!activeEffect) return
+        let depsMap = bucket.get(target)
+        if (!depsMap) {
+            depsMap = new Map()
+            bucket.set(target, depsMap)
+        }
+        let deps = depsMap.get(key)
+        if (!deps) {
+            deps = new Set()
+            depsMap.set(key, deps)
+        }
+        deps.add(activeEffect)
+        activeEffect.deps.push(deps)
+    }
+
+    function trigger(target, key) {
+        const depsMap = bucket.get(target)
+        if (!depsMap) return
+        const effects = depsMap.get(key)
+        const effectsToRun = new Set(effects)
+        effectsToRun.forEach(fn => fn(key))
+    }
+
+    function cleanup(effectFn) {
+        for (let i = 0; i < effectFn.deps.length; i++) {
+            const deps = effectFn.deps[i]
+            deps.delete(effectFn)
+        }
+        effectFn.deps.length = 0
+    }
+
+    function effect(fn) {
+        const effectFn = (key) => {
+            cleanup(effectFn)
+            activeEffect = effectFn
+            fn(key)
+        }
+        effectFn.deps = []
+        effectFn()
+    }
+
+
+    /**
+     * **************************************
+     * 问题：
+     * 嵌套的 effect 运行顺序错误
+     * （在 setTimeout 中改变 obj.foo 的值，应该触发外层副作用函数 effectFn1，而不是内部的 effectFn2）
+     * **************************************
+     */
+    let temp1, temp2
+    effect(function effectFn1(key1) {
+        console.log('effectFn1 run:', key1)
+
+        effect(function effectFn2(key2) {
+            console.log('effectFn2 run:', key2)
+            temp2 = obj.bar
+        })
+
+        temp1 = obj.foo
+    })
+    console.log(bucket)
+
+    setTimeout(() => {
+        obj.foo = false
+    }, 500)
+
+</script>
+</html>
